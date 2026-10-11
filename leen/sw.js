@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, refresh it in the background.
-const CACHE = 'glow-leen-1791729641';
+const CACHE = 'glow-leen-1791741886';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

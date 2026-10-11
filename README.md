@@ -4,7 +4,8 @@ Two personal apps that run offline and can be saved to the phone's home screen:
 
 - `celine/`: Celine's app (pink/purple theme, 57 → 51.5 kg)
 - `leen/`: Leen's app (teal/blue theme, 54 → 48.5 kg)
-- `src/`: the shared source code. Edit files here, then run `./build.sh` to rebuild both apps.
+- `sarah/`: Sarah's app (orange/pink theme, 55 → 48.5 kg)
+- `src/`: the shared source code. Edit files here, then run `./build.sh` to rebuild all three apps.
 
 ## Deploy on GitHub Pages (about 5 minutes)
 
@@ -14,6 +15,7 @@ Two personal apps that run offline and can be saved to the phone's home screen:
 4. After about a minute, the apps are live at:
    - `https://<your-username>.github.io/glow/celine/`
    - `https://<your-username>.github.io/glow/leen/`
+   - `https://<your-username>.github.io/glow/sarah/`
 
 Send each girl only her own link.
 

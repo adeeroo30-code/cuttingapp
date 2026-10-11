@@ -3,7 +3,7 @@
 # Edit files in src/, then run:  ./build.sh
 set -e
 cd "$(dirname "$0")"
-for who in celine leen; do
+for who in celine leen sarah; do
   out="$who"
   mkdir -p "$out/icons"
   cfg="src/config.$who.js"
