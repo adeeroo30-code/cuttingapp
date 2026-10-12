@@ -3,6 +3,7 @@
    Pure vanilla JS, offline-first, all data stays on the phone.
    ========================================================= */
 'use strict';
+const APP_VERSION = '__VERSION__', APP_BUILT = '__BUILT__'; // filled in by build.sh
 
 // ---------- tiny helpers ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -452,7 +453,8 @@ const VIEWS = {
         <h3>How do you feel today?</h3>
         <div class="row between">${['😫', '😕', '🙂', '😊', '🤩'].map(m =>
           `<button class="mood ${d.mood === m ? 'on' : ''}" data-action="mood" data-m="${m}">${m}</button>`).join('')}</div>
-      </div>`;
+      </div>
+      <button class="ver-foot" data-action="check-update">Glow v${APP_VERSION} · <span class="ver-status">${versionLabel()}</span></button>`;
   },
 
   // ---------------- MEALS ----------------
@@ -1145,6 +1147,50 @@ function openWatchGuide(clipboardBlocked = false) {
     <button class="btn primary block" data-action="watch-paste">Import</button>`);
 }
 
+// ----- auto-update + version check -----
+// On every open: ask the server for version.json (never cached). If it's newer than what's running,
+// wipe this app's cached files and reload, then say "Updated vX → vY". Data in localStorage is untouched.
+let updateState = 'checking'; // checking | latest | offline | updating
+const isNewer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+async function checkForUpdate(manual = false) {
+  updateState = 'checking'; paintVersion();
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const remote = await res.json();
+    if (isNewer(remote.version, APP_VERSION)) {
+      // don't loop if the server is still serving old files right after a publish
+      const last = Number(localStorage.getItem('glow:updTry:' + CONFIG.id) || 0);
+      if (Date.now() - last < 5 * 60 * 1000 && !manual) { updateState = 'latest'; paintVersion(); return; }
+      localStorage.setItem('glow:updTry:' + CONFIG.id, Date.now());
+      updateState = 'updating'; paintVersion();
+      toast(`✨ Updating to v${remote.version}…`);
+      sessionStorage.setItem('glow:updatedFrom', APP_VERSION);
+      try { for (const k of await caches.keys()) if (k.startsWith('glow-' + CONFIG.id)) await caches.delete(k); } catch (e) {}
+      try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch (e) {}
+      setTimeout(() => location.reload(), 600);
+      return;
+    }
+    updateState = 'latest';
+    if (manual) toast(`✓ You’re on the newest version (v${APP_VERSION})`);
+  } catch (e) {
+    updateState = 'offline';
+    if (manual) toast('📡 No internet, so I can’t check right now');
+  }
+  paintVersion();
+}
+function versionLabel() {
+  return { checking: 'checking for updates…', latest: 'up to date ✓', offline: 'offline · will check later', updating: 'updating…' }[updateState];
+}
+function paintVersion() { $$('.ver-status').forEach(el => (el.textContent = versionLabel())); }
+function showUpdatedNotice() {
+  const from = sessionStorage.getItem('glow:updatedFrom');
+  if (!from) return;
+  sessionStorage.removeItem('glow:updatedFrom');
+  if (from === APP_VERSION) return; // reload didn't get new files yet; next open will retry
+  localStorage.removeItem('glow:updTry:' + CONFIG.id);
+  setTimeout(() => { toast(`✨ Updated v${from} → v${APP_VERSION}`); confetti(60); }, 3400);
+}
+
 // ----- first-open setup -----
 let setupGoal = null;
 function openSetup() {
@@ -1184,7 +1230,9 @@ function openSettings() {
   const acts = [[1.2, 'Little/no steps'], [1.375, 'Light'], [1.55, 'Active'], [1.725, 'Very active']];
   const themes = [['rose', '#ff5fa2', '#a66bff'], ['ocean', '#2fe0c4', '#5b8cff'], ['sunset', '#ff9f45', '#ff4d6d'], ['lilac', '#c084fc', '#f472b6'], ['lime', '#bef264', '#22d3ee']];
   openSheet(`
-    <h2>⚙️ Settings</h2><div class="small muted" style="margin-bottom:16px">Everything is saved only on this phone.</div>
+    <h2>⚙️ Settings</h2><div class="small muted" style="margin-bottom:12px">Everything is saved only on this phone.</div>
+    <div class="card row between" style="padding:12px 14px"><div><b>Version ${APP_VERSION}</b><div class="tiny faint">built ${APP_BUILT} · <span class="ver-status">${versionLabel()}</span></div></div>
+      <button class="btn sm" data-action="check-update">🔄 Check</button></div>
     <div class="field"><label>Theme</label><div class="row" style="gap:12px">${themes.map(t => `<button class="theme-dot ${s.theme === t[0] ? 'on' : ''}" style="background:linear-gradient(135deg,${t[1]},${t[2]})" data-action="theme" data-v="${t[0]}"></button>`).join('')}</div></div>
     <div class="grid2">
       <div class="field"><label>Name</label><input class="input" id="sName" value="${esc(p.name)}"></div>
@@ -1407,6 +1455,7 @@ function handle(a, el) {
   switch (a) {
     case 'go': ui.tab = ds.tab; render(); window.scrollTo({ top: 0 }); break;
     case 'settings': openSettings(); break;
+    case 'check-update': checkForUpdate(true); break;
     case 'su-act': P().activity = Number(ds.v); $$('[data-action="su-act"]').forEach(b => b.classList.toggle('on', b === el)); break;
     case 'su-save': saveSetup(); break;
     case 'quick-add': openQuickAdd(); break;
@@ -1599,9 +1648,12 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { lastHidden = Date.now(); return; }
   if (Date.now() - lastHidden > 20 * 60 * 1000 && !needsSetup()) showSplash();   // welcome back after a break
   render(); if (!needsSetup()) scheduleReminders();
+  checkForUpdate(); // phones keep the app open in the background for days, so check again on return
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+showUpdatedNotice();
+setTimeout(() => checkForUpdate(), 1500);
 document.documentElement.dataset.theme = S.settings.theme;
 showSplash();
 if (needsSetup()) { render(); setTimeout(openSetup, 2600); }

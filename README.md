@@ -53,6 +53,13 @@ Build it once on one iPhone, then share it to the others (Share → Copy iCloud 
 
 **Bad data is caught, and nothing changes until it's sorted out:** empty or zero readings (watch off, no Health permission), tiny readings (< 40 kcal), kilojoules instead of calories (converted), unrealistic totals (double-counting devices, with a fix explained), very big days (asks to confirm, or offers a safe cap), data from the future or more than a week old, and unreadable dates (uses today and says so). Yesterday's data goes to yesterday.
 
+## Versions & updates
+
+The version is shown at the bottom of the Today screen ("Glow v1.5 · up to date ✓") and in ⚙️ Settings, which also has a 🔄 Check button.
+Each time the app opens, it checks the server. If a newer version is there, it updates on the spot, shows "✨ Updated v1.5 → v1.6", and keeps all her data.
+
+**To release an update:** change `src/VERSION` (e.g. 1.5 → 1.6), run `./build.sh`, commit and push.
+
 ## Good to know
 
 - All data stays **on the phone** (no accounts and no server). Use ⚙️ → **Backup** now and then.

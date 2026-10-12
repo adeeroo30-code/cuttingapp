@@ -3,6 +3,8 @@
 # Edit files in src/, then run:  ./build.sh
 set -e
 cd "$(dirname "$0")"
+VERSION=$(tr -d ' \n' < src/VERSION)
+BUILT=$(date +"%Y-%m-%d %H:%M")
 for who in celine leen sarah natal; do
   out="$who"
   mkdir -p "$out/icons"
@@ -12,7 +14,9 @@ for who in celine leen sarah natal; do
   c1=$(grep "colors:" "$cfg" | sed -E "s/.*\['(#[0-9a-fA-F]+)', '(#[0-9a-fA-F]+)'\].*/\1/")
   c2=$(grep "colors:" "$cfg" | sed -E "s/.*\['(#[0-9a-fA-F]+)', '(#[0-9a-fA-F]+)'\].*/\2/")
   initial=${name:0:1}
-  cp src/app.js src/data.js src/styles.css "$out/"
+  cp src/data.js src/styles.css "$out/"
+  sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILT__/$BUILT/" src/app.js > "$out/app.js"
+  printf '{ "version": "%s", "built": "%s" }\n' "$VERSION" "$BUILT" > "$out/version.json"
   cp "$cfg" "$out/config.js"
   sed "s/__APP_NAME__/$appname/g" src/index.html > "$out/index.html"
   sed -e "s/__APP_NAME__/$appname/g" -e "s/__NAME__/$name/g" src/manifest.template.json > "$out/manifest.webmanifest"
@@ -40,5 +44,5 @@ SVG
   sips -z 192 192 "$tmp/icon.svg.png" --out "$out/icons/icon-192.png" >/dev/null
   sips -z 180 180 "$tmp/icon.svg.png" --out "$out/icons/apple-touch-icon.png" >/dev/null
   rm -rf "$tmp"
-  echo "✓ built $out/"
+  echo "✓ built $out/ (v$VERSION)"
 done
