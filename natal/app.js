@@ -37,7 +37,7 @@ const DEFAULT_TIMES = { breakfast: '08:00', snack1: '10:30', lunch: '13:30', sna
 
 function defaultState() {
   return {
-    v: 1,
+    v: 2,
     profile: {
       // body stats are NOT in the public code; she enters them on first open (stored only on her phone)
       name: CONFIG.name, nameHe: CONFIG.nameHe, heightCm: null, age: null,
@@ -63,6 +63,8 @@ S.favorites = S.favorites || [];
 S.myFoods = S.myFoods || [];
 S.waist = S.waist || [];
 S.profile.goalType = S.profile.goalType || CONFIG.goalType || 'lose';
+// v1 → v2: installs from the first version used "on my feet a bit" (×1.375); the plan now assumes little to no steps
+if ((S.v || 1) < 2) { if (S.profile.activity === 1.375) S.profile.activity = 1.2; S.v = 2; }
 const needsSetup = () => !(S.profile.heightCm && S.profile.age && S.weights.length && S.profile.goalWeight);
 const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { toast('⚠️ Could not save — storage full?'); } };
 
