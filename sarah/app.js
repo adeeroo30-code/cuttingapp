@@ -3,7 +3,7 @@
    Pure vanilla JS, offline-first, all data stays on the phone.
    ========================================================= */
 'use strict';
-const APP_VERSION = '1.5', APP_BUILT = '2026-10-13 01:53'; // filled in by build.sh
+const APP_VERSION = '1.6', APP_BUILT = '2026-10-13 01:58'; // filled in by build.sh
 
 // ---------- tiny helpers ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -454,7 +454,7 @@ const VIEWS = {
         <div class="row between">${['😫', '😕', '🙂', '😊', '🤩'].map(m =>
           `<button class="mood ${d.mood === m ? 'on' : ''}" data-action="mood" data-m="${m}">${m}</button>`).join('')}</div>
       </div>
-      <button class="ver-foot" data-action="check-update">Glow v${APP_VERSION} · <span class="ver-status">${versionLabel()}</span></button>`;
+      <div class="ver-row"><span>Glow v${APP_VERSION} · <span class="ver-status">${versionLabel()}</span></span><button class="chip" data-action="force-update">⬆️ Update app</button></div>`;
   },
 
   // ---------------- MEALS ----------------
@@ -1178,6 +1178,18 @@ async function checkForUpdate(manual = false) {
   }
   paintVersion();
 }
+// The "Update app" button: always throws away this app's cached files and downloads fresh ones
+// (even on the same version), so it also fixes a phone that's somehow stuck on an old copy.
+async function forceUpdate() {
+  if (!navigator.onLine) { toast('📡 You’re offline. Connect to the internet and try again'); return; }
+  updateState = 'updating'; paintVersion(); buzz(15);
+  toast('⬆️ Downloading the newest version…');
+  sessionStorage.setItem('glow:updatedFrom', APP_VERSION);
+  sessionStorage.setItem('glow:manualUpdate', '1');
+  try { for (const k of await caches.keys()) if (k.startsWith('glow-' + CONFIG.id)) await caches.delete(k); } catch (e) {}
+  try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch (e) {}
+  setTimeout(() => location.reload(), 700);
+}
 function versionLabel() {
   return { checking: 'checking for updates…', latest: 'up to date ✓', offline: 'offline · will check later', updating: 'updating…' }[updateState];
 }
@@ -1186,7 +1198,8 @@ function showUpdatedNotice() {
   const from = sessionStorage.getItem('glow:updatedFrom');
   if (!from) return;
   sessionStorage.removeItem('glow:updatedFrom');
-  if (from === APP_VERSION) return; // reload didn't get new files yet; next open will retry
+  const manual = sessionStorage.getItem('glow:manualUpdate'); sessionStorage.removeItem('glow:manualUpdate');
+  if (from === APP_VERSION) { if (manual) setTimeout(() => toast(`✓ Refreshed. You’re on the newest version (v${APP_VERSION})`), 3400); return; }
   localStorage.removeItem('glow:updTry:' + CONFIG.id);
   setTimeout(() => { toast(`✨ Updated v${from} → v${APP_VERSION}`); confetti(60); }, 3400);
 }
@@ -1232,7 +1245,7 @@ function openSettings() {
   openSheet(`
     <h2>⚙️ Settings</h2><div class="small muted" style="margin-bottom:12px">Everything is saved only on this phone.</div>
     <div class="card row between" style="padding:12px 14px"><div><b>Version ${APP_VERSION}</b><div class="tiny faint">built ${APP_BUILT} · <span class="ver-status">${versionLabel()}</span></div></div>
-      <button class="btn sm" data-action="check-update">🔄 Check</button></div>
+      <button class="btn sm primary" data-action="force-update">⬆️ Update app</button></div>
     <div class="field"><label>Theme</label><div class="row" style="gap:12px">${themes.map(t => `<button class="theme-dot ${s.theme === t[0] ? 'on' : ''}" style="background:linear-gradient(135deg,${t[1]},${t[2]})" data-action="theme" data-v="${t[0]}"></button>`).join('')}</div></div>
     <div class="grid2">
       <div class="field"><label>Name</label><input class="input" id="sName" value="${esc(p.name)}"></div>
@@ -1456,6 +1469,7 @@ function handle(a, el) {
     case 'go': ui.tab = ds.tab; render(); window.scrollTo({ top: 0 }); break;
     case 'settings': openSettings(); break;
     case 'check-update': checkForUpdate(true); break;
+    case 'force-update': forceUpdate(); break;
     case 'su-act': P().activity = Number(ds.v); $$('[data-action="su-act"]').forEach(b => b.classList.toggle('on', b === el)); break;
     case 'su-save': saveSetup(); break;
     case 'quick-add': openQuickAdd(); break;

@@ -55,10 +55,10 @@ Build it once on one iPhone, then share it to the others (Share → Copy iCloud 
 
 ## Versions & updates
 
-The version is shown at the bottom of the Today screen ("Glow v1.5 · up to date ✓") and in ⚙️ Settings, which also has a 🔄 Check button.
+The version is shown at the bottom of the Today screen ("Glow v1.6 · up to date ✓") and in ⚙️ Settings. Both places have a **⬆️ Update app** button that downloads a fresh copy right away (it also fixes a stuck app). Their data is never touched.
 Each time the app opens, it checks the server. If a newer version is there, it updates on the spot, shows "✨ Updated v1.5 → v1.6", and keeps all her data.
 
-**To release an update:** change `src/VERSION` (e.g. 1.5 → 1.6), run `./build.sh`, commit and push.
+**To release an update:** change `src/VERSION` (e.g. 1.6 → 1.7), run `./build.sh`, commit and push.
 
 ## Good to know
 
