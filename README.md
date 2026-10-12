@@ -12,14 +12,14 @@ Nobody's age, height or weight is in this code. Each girl types her numbers on f
 
 ## Deploy on GitHub Pages (about 5 minutes)
 
-1. Create a new **public** repo on github.com, for example `glow`.
+1. Create a new **public** repo on github.com, for example `cuttingapp`.
 2. Upload the contents of this folder (drag and drop works: **Add file → Upload files**).
 3. In the repo, go to **Settings → Pages → Source: Deploy from a branch → `main` / root → Save**.
 4. After about a minute, the apps are live at:
-   - `https://<your-username>.github.io/glow/celine/`
-   - `https://<your-username>.github.io/glow/leen/`
-   - `https://<your-username>.github.io/glow/sarah/`
-   - `https://<your-username>.github.io/glow/natal/`
+   - `https://adeeroo30-code.github.io/cuttingapp/celine/`
+   - `https://adeeroo30-code.github.io/cuttingapp/leen/`
+   - `https://adeeroo30-code.github.io/cuttingapp/sarah/`
+   - `https://adeeroo30-code.github.io/cuttingapp/natal/`
 
 Send each girl only her own link.
 
