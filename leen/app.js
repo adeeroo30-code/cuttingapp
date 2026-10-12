@@ -71,8 +71,30 @@ const ui = { prev: {}, tab: 'home', calMonth: new Date(new Date().getFullYear(),
 // ---------- nutrition math ----------
 const P = () => S.profile;
 const currentWeight = () => S.weights.length ? S.weights[S.weights.length - 1].kg : P().startWeight;
-const bmr = w => 10 * w + 6.25 * P().heightCm - 5 * P().age - 161; // Mifflin-St Jeor (female)
-const tdee = () => Math.round(bmr(currentWeight()) * P().activity);
+// Resting burn. Under 18: WHO/FAO Schofield equation for girls 10–18 (Mifflin isn't validated for teens
+// and runs ~120 kcal low for them). 18+: Mifflin-St Jeor (female).
+const bmr = w => (P().age < 18 ? 13.384 * w + 692.6 : 10 * w + 6.25 * P().heightCm - 5 * P().age - 161);
+const formulaTdee = () => Math.round(bmr(currentWeight()) * P().activity);
+// Self-correction: after ~3 weeks of weigh-ins + food logs, compare what she ate with how her weight
+// actually moved, and nudge the estimate toward her real burn (capped so bad logging can't swing it far).
+function observedTdee() {
+  const from = keyOf(addDays(new Date(), -35)), ws = S.weights.filter(w => w.date >= from);
+  if (ws.length < 4) return null;
+  const span = daysBetween(ws[0].date, ws[ws.length - 1].date);
+  if (span < 21) return null;
+  const days = [];
+  for (let k = ws[0].date; k <= ws[ws.length - 1].date; k = keyOf(addDays(parseKey(k), 1))) { const t = dayTotals(k); if (t.n >= 3) days.push(t.kcal - t.burn); }
+  if (days.length < span * 0.7) return null; // only trust well-logged periods
+  const xs = ws.map(w => daysBetween(ws[0].date, w.date)), ys = ws.map(w => w.kg);
+  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+  return days.reduce((a, b) => a + b) / days.length - slope * 7700;
+}
+const tdee = () => {
+  const f = formulaTdee(), o = observedTdee();
+  return o === null ? f : Math.round(clamp((f + o) / 2, f * 0.9, f * 1.15));
+};
+const isCalibrated = () => observedTdee() !== null;
 const FLOOR = () => (P().age < 19 ? 1500 : 1400); // never plan below this — no starving
 const PACES = { gentle: 300, steady: 400, faster: 500 };
 const isRecomp = () => P().goalType === 'recomp';
@@ -512,7 +534,7 @@ const VIEWS = {
       <div class="card chart"><h3>Weight journey</h3>${weightChart()}</div>
       <div class="card chart"><h3>Last 7 days</h3>${weekBars()}</div>
       <div class="grid2">
-        <div class="card"><div class="tiny muted">DAILY GOAL</div><div style="font-size:22px;font-weight:700">${target()} <span class="small muted">kcal</span></div><div class="tiny faint">Burn ≈ ${tdee()} kcal/day</div></div>
+        <div class="card"><div class="tiny muted">DAILY GOAL</div><div style="font-size:22px;font-weight:700">${target()} <span class="small muted">kcal</span></div><div class="tiny faint">Burn ≈ ${tdee()} kcal/day${isCalibrated() ? ' · ✓ tuned to your data' : ''}</div></div>
         <div class="card"><div class="tiny muted">BMI</div><div style="font-size:22px;font-weight:700">${bmi(cw)}</div><div class="tiny faint">healthy range 18.5–25</div></div>
       </div>
       <div class="card"><h3>Badges <span class="tiny faint">${Object.keys(S.badges).length}/${BADGES.length}</span></h3>
@@ -1075,7 +1097,7 @@ function openSettings() {
     <div class="field"><label>How active are you?</label><div class="seg">${acts.map(a => `<button class="${p.activity === a[0] ? 'on' : ''}" data-action="set-act" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
     <div class="field"><label>My goal</label><div class="seg">${[['lose', '🔥 Lose weight'], ['recomp', '💪 Lose fat & build muscle']].map(a => `<button class="${p.goalType === a[0] ? 'on' : ''}" data-action="set-goal" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
     <div class="field" ${isRecomp() ? 'style="display:none"' : ''}><label>Pace</label><div class="seg">${[['gentle', '🐢 Gentle'], ['steady', '🚶‍♀️ Steady'], ['faster', '🏃‍♀️ Faster']].map(a => `<button class="${p.pace === a[0] ? 'on' : ''}" data-action="set-pace" data-v="${a[0]}">${a[1]}</button>`).join('')}</div>
-    </div><div class="tiny faint" style="margin:-6px 0 14px">Daily goal: <b>${target()} kcal</b> + workouts · protein <b>${proteinTarget()} g</b> · never below ${FLOOR()} kcal so you’re never starving.</div>
+    </div><div class="tiny faint" style="margin:-6px 0 14px">Resting burn ${Math.round(bmr(currentWeight()))} × activity ${P().activity} = ${formulaTdee()} kcal/day${isCalibrated() ? ` → tuned to your real results: ${tdee()}` : ''} − ${deficit()} → daily goal: <b>${target()} kcal</b> + workouts · protein <b>${proteinTarget()} g</b> · never below ${FLOOR()} kcal so you’re never starving.</div>
     <div class="field"><label>Water goal (cups)</label><input class="input" id="sWater" type="number" min="4" max="14" value="${s.waterGoal}"></div>
     <div class="field"><label>Meal times</label><div class="grid2">${SLOTS.map(sl => `<div><div class="tiny muted" style="margin-bottom:4px">${sl.emoji} ${sl.en}${sl.id === 'snack1' ? ' (AM)' : sl.id === 'snack2' ? ' (PM)' : ''}</div><input class="input" type="time" id="t_${sl.id}" value="${s.times[sl.id]}"></div>`).join('')}</div></div>
     <button class="btn primary block" data-action="settings-save">Save changes</button>
