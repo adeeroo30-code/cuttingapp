@@ -41,7 +41,7 @@ function defaultState() {
     profile: {
       // body stats are NOT in the public code; she enters them on first open (stored only on her phone)
       name: CONFIG.name, nameHe: CONFIG.nameHe, heightCm: null, age: null,
-      startWeight: null, goalWeight: null, activity: 1.375, pace: 'gentle', startDate: todayKey(),
+      startWeight: null, goalWeight: null, activity: 1.2, pace: 'gentle', startDate: todayKey(),
       goalType: CONFIG.goalType || 'lose', // 'lose' = cut weight · 'recomp' = lose fat & build muscle
     },
     settings: { theme: CONFIG.theme, waterGoal: 8, notify: false, times: { ...DEFAULT_TIMES } },
@@ -1059,7 +1059,7 @@ function openSetup() {
       <div class="field"><label>Goal weight (kg)</label><input class="input" id="suG" type="number" step="0.1" inputmode="decimal" placeholder="${recomp ? 'about the same' : 'kg'}"></div>
     </div>
     <div class="tiny faint" style="margin:-6px 0 14px" id="suHint">${recomp ? 'Tone-up mode 💪 Pick a goal close to your current weight. You’ll lose fat and gain muscle, so the scale barely moves.' : 'Pick something realistic. I won’t let you go below a healthy weight for your height 💛'}</div>
-    <div class="field"><label>How active are you on a normal day? (not counting workouts)</label><div class="seg">${[[1.2, 'Mostly sitting'], [1.375, 'On my feet a bit'], [1.55, 'On my feet a lot']].map(a => `<button class="${p.activity === a[0] ? 'on' : ''}" data-action="su-act" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
+    <div class="field"><label>How active are you on a normal day? (not counting workouts)</label><div class="seg">${[[1.2, 'Little to no steps'], [1.375, 'On my feet a bit'], [1.55, 'On my feet a lot']].map(a => `<button class="${p.activity === a[0] ? 'on' : ''}" data-action="su-act" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
     <button class="btn primary block" data-action="su-save">Let’s go 🚀</button>`);
   $('#sheet').dataset.kind = 'setup';
 }
@@ -1080,7 +1080,7 @@ function saveSetup() {
 // ----- settings -----
 function openSettings() {
   const p = P(), s = S.settings;
-  const acts = [[1.2, 'Mostly sitting'], [1.375, 'Light'], [1.55, 'Active'], [1.725, 'Very active']];
+  const acts = [[1.2, 'Little/no steps'], [1.375, 'Light'], [1.55, 'Active'], [1.725, 'Very active']];
   const themes = [['rose', '#ff5fa2', '#a66bff'], ['ocean', '#2fe0c4', '#5b8cff'], ['sunset', '#ff9f45', '#ff4d6d'], ['lilac', '#c084fc', '#f472b6'], ['lime', '#bef264', '#22d3ee']];
   openSheet(`
     <h2>⚙️ Settings</h2><div class="small muted" style="margin-bottom:16px">Everything is saved only on this phone.</div>
