@@ -312,3 +312,4 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .wz-kind span { font-size: 24px; }
 .wz-kind.on { border-color: var(--a1); background: color-mix(in srgb, var(--a1) 16%, transparent); }
 .seg button .tiny { font-weight: 400; }
+.guide code { background: rgba(255,255,255,.1); padding: 1px 6px; border-radius: 6px; font-size: 12.5px; }

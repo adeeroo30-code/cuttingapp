@@ -33,6 +33,26 @@ Send each girl only her own link.
 - **📅 Calendar reminders (most reliable):** Settings ⚙️ → "Add daily reminders to my phone calendar". This downloads a file that adds 5 daily repeating events with alerts. If it doesn't open from the home-screen app on iPhone, open the same link in Safari and tap the button there.
 - **🔔 App notifications:** Settings ⚙️ → "Turn on app notifications". On iPhone this only works after adding the app to the Home Screen (iOS 16.4+). These fire while the app is open or was used recently. Notifications that fire with the app fully closed would need a push server.
 
+## ⌚ Watch sync (iPhone + Apple Health)
+
+Web apps can't read the Health app directly, so a small Shortcut copies the day's **Active Energy** and the app imports it with one tap. This works with Apple Watch and any watch that writes to Health (Garmin, Oura…).
+
+**One-time setup (Shortcuts app → ＋, name it "Glow Sync"):**
+1. **Find Health Samples**: Type `Active Energy`, Add Filter `Start Date is today`
+2. **Calculate Statistics**: `Sum` of Health Samples
+3. **Text**: `GLOW;burn=`[Statistics]`;date=`[Current Date]. Tap Current Date → Date Format → Custom → `yyyy-MM-dd`
+4. **Copy to Clipboard**
+5. **Show Notification**: "Copied ✓ Open Glow → tap ⌚ Watch"
+6. Run it once and allow Health access. Share → Add to Home Screen puts it next to Glow.
+
+Build it once on one iPhone, then share it to the others (Share → Copy iCloud Link). The same Shortcut works for every girl's app.
+
+**Daily use:** tap Glow Sync → open Glow → Movement → **⌚ Watch**. Syncing again later the same day updates the number instead of adding it twice.
+
+**How it counts:** 80% of the watch number (watches run high), minus a small allowance for everyday moving that the base goal already covers. Workouts she also logged by hand are not added on top: the app uses whichever is bigger, the watch or the logged workouts.
+
+**Bad data is caught, and nothing changes until it's sorted out:** empty or zero readings (watch off, no Health permission), tiny readings (< 40 kcal), kilojoules instead of calories (converted), unrealistic totals (double-counting devices, with a fix explained), very big days (asks to confirm, or offers a safe cap), data from the future or more than a week old, and unreadable dates (uses today and says so). Yesterday's data goes to yesterday.
+
 ## Good to know
 
 - All data stays **on the phone** (no accounts and no server). Use ⚙️ → **Backup** now and then.

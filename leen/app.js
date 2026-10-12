@@ -154,7 +154,7 @@ const dayTotals = k => {
   return {
     kcal: d.entries.reduce((s, e) => s + e.kcal, 0),
     p: d.entries.reduce((s, e) => s + (e.p || 0), 0),
-    burn: (d.exercise || []).reduce((s, e) => s + e.kcal, 0),
+    burn: dayBurn(d),
     n: d.entries.length,
   };
 };
@@ -439,9 +439,11 @@ const VIEWS = {
       </div>
 
       <div class="card">
-        <h3>🏃‍♀️ Movement <button class="chip" data-action="add-exercise">＋ Add</button></h3>
+        <h3>🏃‍♀️ Movement <span class="row" style="gap:6px"><button class="chip" data-action="watch-import">⌚ Watch</button><button class="chip" data-action="add-exercise">＋ Add</button></span></h3>
+        ${d.watch ? `<div class="entry"><span class="e">⌚</span><div class="grow"><div>Watch · Apple Health</div><div class="tiny muted">${d.watch.kcal} active kcal · synced ${new Date(d.watch.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div></div><span class="small" style="color:var(--good)">+${d.watch.credited}</span><button class="x" data-action="del-watch" data-k="${k}">×</button></div>
+          ${d.exercise.length ? `<div class="tiny faint" style="padding:6px 0">Watch and logged workouts overlap, so the bigger one counts: <b>+${dayBurn(d)}</b></div>` : ''}` : ''}
         ${d.exercise.length ? d.exercise.map(x => `<div class="entry"><span class="e">${x.emoji}</span><div class="grow"><div class="he" style="text-align:left">${esc(x.name)}</div><div class="tiny muted">${x.min} min${x.parts ? ' · ' + x.parts.map(p => esc(p.label)).join(' · ') : ''}</div></div><span class="small" style="color:var(--good)">+${x.kcal}</span><button class="x" data-action="del-ex" data-id="${x.id}">×</button></div>`).join('')
-          : `<button class="tip-card small" style="width:100%;text-align:left" data-action="add-exercise">Worked out? Tell me what you did (cardio, weights, pilates…) and I’ll calculate the calories. They get added to your food budget 🍽️</button>`}
+          : d.watch ? '' : `<button class="tip-card small" style="width:100%;text-align:left" data-action="add-exercise">Worked out? Tell me what you did (cardio, weights, pilates…) and I’ll calculate the calories. They get added to your food budget 🍽️</button>`}
       </div>
 
       <div class="card">
@@ -891,6 +893,7 @@ function openDaySheet(k) {
     ${d?.mood ? `<div class="small muted" style="margin-bottom:8px">Mood: <span style="font-size:20px">${d.mood}</span></div>` : ''}
     <div class="card">${d?.entries.length ? SLOTS.map(s => { const es = d.entries.filter(e => e.slot === s.id); return es.length ? `<div class="tiny muted" style="margin-top:6px">${s.emoji} ${s.en.toUpperCase()}</div>${es.map(e => entryRow(e, k)).join('')}` : ''; }).join('')
       : '<div class="empty-state"><span class="ee">📝</span>Nothing logged this day</div>'}
+      ${d?.watch ? `<div class="divider"></div><div class="entry"><span class="e">⌚</span><span class="grow">Watch: ${d.watch.kcal} active kcal</span><span class="small muted">+${d.watch.credited}</span></div>` : ''}
       ${d?.exercise?.length ? `<div class="divider"></div>${d.exercise.map(x => `<div class="entry"><span class="e">${x.emoji}</span><span class="grow he" style="text-align:left">${esc(x.name)} · ${x.min}′</span><span class="small muted">−${x.kcal}</span></div>`).join('')}` : ''}
     </div>
     ${k <= todayKey() ? `<button class="btn primary block" data-action="day-add" data-k="${k}">＋ Add food to this day</button>` : ''}
@@ -1044,6 +1047,102 @@ function countUp(el, to) {
   (function f(t) { const p = Math.min(1, (t - t0) / 900); el.textContent = Math.round(to * (1 - (1 - p) ** 3)); if (p < 1) requestAnimationFrame(f); })(t0);
 }
 
+// ----- watch import: Apple Health → iPhone Shortcut → clipboard → this app -----
+// iOS doesn't let web apps read Health, so a Shortcut copies "GLOW;burn=…;date=…" and the app reads it.
+const manualBurn = d => (d.exercise || []).reduce((a, e) => a + e.kcal, 0);
+// Apple's Active Energy also counts the light everyday movement our base goal already includes, and
+// watches tend to run high, so: count 80% and subtract a small everyday-movement allowance.
+const watchBaseline = () => Math.round(bmr(currentWeight()) * 0.1);
+const watchCredit = kcal => Math.max(0, Math.round(kcal * 0.8 - watchBaseline()));
+// watch data already contains any workout she wore it for → use whichever is bigger, never both
+const dayBurn = d => Math.max(manualBurn(d), d.watch ? d.watch.credited : 0);
+const dayName = k => (k === todayKey() ? 'today' : k === keyOf(addDays(new Date(), -1)) ? 'yesterday' : fmtEN(parseKey(k), { weekday: 'long', month: 'short', day: 'numeric' }));
+
+function parseWatchText(txt) {
+  if (!txt || !/GLOW/i.test(txt)) return { error: 'nopayload' };
+  const get = key => ((txt.match(new RegExp(key + '\\s*=\\s*([^;|\\n]*)', 'i')) || [])[1] || '').trim();
+  const raw = get('burn'), dateRaw = get('date');
+  const unit = /kj|kilojoule|קילו.?ג/i.test(raw) ? 'kj' : 'kcal';
+  let n = (raw.match(/\d[\d.,\s  ]*/) || [''])[0].replace(/[\s  ]/g, '');
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(n)) n = n.replace(/,/g, '');                       // 1,234.5
+  else if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(n)) n = n.replace(/\./g, '').replace(',', '.'); // 1.234,5
+  else n = n.replace(',', '.');                                                              // 345,6
+  const value = n ? (/-\s*\d/.test(raw) ? -1 : parseFloat(n)) : null; // negative = broken reading
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) && !isNaN(parseKey(dateRaw)) ? dateRaw : null;
+  return { value: Number.isFinite(value) ? value : null, unit, date, dateOk: !!date || !dateRaw };
+}
+function judgeWatch(p) {
+  const setupBtn = { t: '🛠 How to set up the Shortcut', a: 'watch-guide' };
+  if (p.error) return { level: 'error', emoji: '📋', title: 'No watch data found', msg: 'I couldn’t find watch data on your clipboard. Run the “Glow Sync” Shortcut first, then come back and tap ⌚ Watch.', btns: [setupBtn] };
+  const k = p.date || todayKey(), age = daysBetween(k, todayKey());
+  if (age < 0) return { level: 'error', emoji: '📅', title: 'That date is in the future', msg: `The data says it’s from ${k}. Check the date in the Shortcut’s Text step (format yyyy-MM-dd) and your phone’s date settings.`, btns: [setupBtn] };
+  if (age > 7) return { level: 'error', emoji: '🕰️', title: 'That data is old', msg: `This is from ${dayName(k)}, more than a week ago. Run the Shortcut again to get fresh numbers.` };
+  if (p.value === null || p.value <= 0) return { level: 'error', emoji: '⌚', title: `No activity from your watch for ${dayName(k)}`,
+    msg: 'Health has nothing recorded yet. Maybe the watch wasn’t on, hasn’t synced, or the Shortcut isn’t allowed to read Health (Settings → Health → Data Access → Shortcuts → turn on Active Energy).\n\nNothing was changed. You can still log a workout by hand.', btns: [{ t: '＋ Log a workout instead', a: 'add-exercise' }, setupBtn] };
+  let kcal = Math.round(p.unit === 'kj' ? p.value / 4.184 : p.value);
+  if (kcal < 40) return { level: 'error', emoji: '🪫', title: `Only ${kcal} kcal recorded`, msg: 'That’s too little to be a real reading (the watch was probably off or not synced yet). Nothing was changed.', btns: [{ t: '＋ Log a workout instead', a: 'add-exercise' }] };
+  const cap = Math.round(currentWeight() * 20); // ≈ 3+ hours of hard exercise for her size
+  if (kcal > 2500) {
+    const asKj = Math.round(kcal / 4.184);
+    if (p.unit === 'kcal' && asKj <= cap) return { level: 'confirm', emoji: '🔢', k, title: `${kcal} looks way too high`,
+      msg: `It might be in kilojoules (some phones show energy in kJ). In calories that’s ${asKj} kcal, which is realistic.`, btns: [{ t: `✓ Use ${asKj} kcal`, a: 'watch-apply', v: asKj }] };
+    return { level: 'error', emoji: '🚫', title: `${kcal} kcal isn’t realistic`, msg: 'This is usually two devices counting the same movement (e.g. watch + phone, or two apps). In the Health app: Browse → Activity → Active Energy → Data Sources & Access, keep your watch at the top.\n\nNothing was changed.', btns: [{ t: '＋ Log a workout instead', a: 'add-exercise' }] };
+  }
+  if (kcal > cap) return { level: 'confirm', emoji: '🤔', k, title: `Big day! ${kcal} active kcal`,
+    msg: `That’s more than ${cap} kcal, about 3+ hours of hard exercise. Did you really do something that long (a hike, a long workout, walking all day)?`,
+    btns: [{ t: '✓ Yes, it’s real', a: 'watch-apply', v: kcal }, { t: `Count it as ${cap} to be safe`, a: 'watch-apply', v: cap }] };
+  return { level: 'ok', k, kcal, dateOk: p.dateOk };
+}
+async function importWatch() {
+  let txt = null;
+  try { txt = await navigator.clipboard.readText(); } catch (e) { txt = null; }
+  if (txt === null) { openWatchGuide(true); return; } // clipboard blocked → paste box
+  handleWatchText(txt);
+}
+function handleWatchText(txt) {
+  const j = judgeWatch(parseWatchText(txt));
+  if (j.level === 'ok') return applyWatch(j.k, j.kcal, j.dateOk);
+  openSheet(`<div class="sheet-hero"><div class="big-emoji">${j.emoji}</div><h2>${esc(j.title)}</h2></div>
+    <div class="small" style="line-height:1.55;white-space:pre-line;margin-bottom:16px">${esc(j.msg)}</div>
+    ${(j.btns || []).map((b, i) => `<button class="btn ${i === 0 && j.level === 'confirm' ? 'primary' : ''} block" style="margin-bottom:8px" data-action="${b.a}" ${b.v !== undefined ? `data-v="${b.v}" data-k="${j.k}"` : ''}>${b.t}</button>`).join('')}
+    <button class="btn block" data-action="close-sheet">${j.level === 'confirm' ? 'Cancel' : 'Close'}</button>`);
+}
+function applyWatch(k, kcal, dateOk = true) {
+  const d = getDay(k), prev = d.watch, before = dayBurn(d);
+  d.watch = { kcal, credited: watchCredit(kcal), at: Date.now() };
+  save(); checkBadges(); render(); buzz([10, 30, 10]);
+  const added = dayBurn(d), man = manualBurn(d);
+  openSheet(`<div class="sheet-hero"><div class="big-emoji">⌚</div><h2>Synced ${dayName(k)} ✓</h2>
+      <div class="big-num grad-text" style="margin-top:8px">+${added}</div><div class="small muted">kcal added to ${dayName(k)}’s food budget</div></div>
+    <div class="card small" style="line-height:1.6">
+      <div class="row between"><span>Watch active energy</span><b>${kcal} kcal</b></div>
+      <div class="row between"><span>Counted (80%, minus ${watchBaseline()} for everyday moving)</span><b>${d.watch.credited}</b></div>
+      ${man ? `<div class="row between"><span>Workouts you logged</span><b>${man}</b></div><div class="tiny faint" style="margin-top:6px">Your watch already includes workouts you wore it for, so I use whichever is bigger instead of adding both.</div>` : ''}
+      ${prev ? `<div class="tiny faint" style="margin-top:6px">Replaced the earlier sync (${prev.kcal} kcal). Syncing again later in the day just updates it.</div>` : ''}
+    </div>
+    ${!dateOk ? '<div class="tiny" style="color:var(--warn);margin-bottom:10px">The Shortcut’s date was unreadable, so I used today.</div>' : ''}
+    <button class="btn primary block" data-action="close-sheet">Nice!</button>`);
+  if (added > before) confetti(50);
+}
+function openWatchGuide(clipboardBlocked = false) {
+  openSheet(`<h2>⌚ Watch sync setup</h2>
+    <div class="small muted" style="margin:4px 0 14px">One time, about 2 minutes. Works with Apple Watch and any watch that sends data to the Health app (Garmin, Oura, etc.).</div>
+    ${clipboardBlocked ? '<div class="tip-card small">Your phone didn’t let me read the clipboard. Long-press the box below → <b>Paste</b>, then tap Import.</div>' : ''}
+    <div class="card small guide" style="line-height:1.6">
+      <b>1.</b> Open the <b>Shortcuts</b> app → tap <b>＋</b> → name it <b>Glow Sync</b>.<br>
+      <b>2.</b> Add action <b>Find Health Samples</b> → Type: <b>Active Energy</b> → Add Filter: <b>Start Date is today</b>.<br>
+      <b>3.</b> Add <b>Calculate Statistics</b> → <b>Sum</b> of Health Samples.<br>
+      <b>4.</b> Add <b>Text</b> and type exactly:<br><code>GLOW;burn=</code>[Statistics]<code>;date=</code>[Current Date]<br>
+      Tap <i>Current Date</i> → Date Format: <b>Custom</b> → <code>yyyy-MM-dd</code><br>
+      <b>5.</b> Add <b>Copy to Clipboard</b>.<br>
+      <b>6.</b> Add <b>Show Notification</b>: “Copied ✓ Open Glow → tap ⌚ Watch”.<br>
+      <b>7.</b> Run it once and tap <b>Allow</b> when it asks for Health access.<br><br>
+      <b>Every evening:</b> tap Glow Sync (tip: Share → <b>Add to Home Screen</b> to put it next to Glow) → open Glow → Movement → <b>⌚ Watch</b>.
+    </div>
+    <div class="field"><label>Or paste here</label><textarea class="input" id="watchPaste" rows="2" placeholder="GLOW;burn=…;date=…"></textarea></div>
+    <button class="btn primary block" data-action="watch-paste">Import</button>`);
+}
+
 // ----- first-open setup -----
 let setupGoal = null;
 function openSetup() {
@@ -1103,6 +1202,7 @@ function openSettings() {
     <button class="btn primary block" data-action="settings-save">Save changes</button>
     <div class="divider"></div>
     <h3 style="margin:0 0 10px;font-size:15px">🔔 Meal reminders</h3>
+    <button class="btn block" style="margin-bottom:10px" data-action="watch-guide">⌚ Watch sync (Apple Health) setup</button>
     <button class="btn block" data-action="notify-on">${s.notify ? '✅ App notifications on — send test' : '🔔 Turn on app notifications'}</button>
     <div class="tiny faint" style="margin:6px 0 10px">Works while the app is open or recently used. On iPhone the app must be added to the Home Screen first.</div>
     <button class="btn block" data-action="ics">📅 Add daily reminders to my phone calendar</button>
@@ -1330,6 +1430,12 @@ function handle(a, el) {
     case 'water': { const d = getDay(k), i = Number(ds.i); d.water = d.water === i + 1 ? i : i + 1; save(); buzz(8); checkBadges(); render(); break; }
     case 'mood': { const d = getDay(k); d.mood = d.mood === ds.m ? null : ds.m; save(); buzz(8); render(); break; }
     case 'add-exercise': openWorkout(); break;
+    case 'watch-import': importWatch(); break;
+    case 'watch-guide': openWatchGuide(); break;
+    case 'watch-paste': { const t = $('#watchPaste').value; if (!t.trim()) { toast('Paste the copied text first 🙂'); break; } handleWatchText(t); break; }
+    case 'watch-apply': applyWatch(ds.k, Number(ds.v)); break;
+    case 'del-watch': { delete getDay(ds.k).watch; save(); render(); toast('Watch data removed'); break; }
+    case 'close-sheet': closeSheet(); break;
     case 'del-ex': { const d = getDay(k); d.exercise = d.exercise.filter(x => x.id !== ds.id); save(); render(); break; }
     case 'del-entry': {
       const d = getDay(ds.k); d.entries = d.entries.filter(e => e.id !== ds.id); save(); buzz(8);
