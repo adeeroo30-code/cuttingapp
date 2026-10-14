@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, refresh it in the background.
-const CACHE = 'glow-sarah-1791831493';
+const CACHE = 'glow-sarah-1792000979';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

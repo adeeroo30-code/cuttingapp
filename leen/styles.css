@@ -316,3 +316,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 
 .ver-foot { display: block; margin: 4px auto 0; padding: 8px 14px; font-size: 11.5px; color: var(--faint); border-radius: 99px; }
 .ver-foot:active { background: var(--card); }
 .ver-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 6px 0 0; font-size: 11.5px; color: var(--faint); }
+.ing2 { padding: 4px 0 10px; border-bottom: 1px dashed var(--line); }
+.ing2:last-child { border-bottom: 0; }
+.ing2 .ing { border: 0; padding-bottom: 6px; }
+.ing2.gone .iname { text-decoration: line-through; opacity: .5; }
+.qchips { display: flex; gap: 4px; }
+.qchips button { flex: 1; padding: 6px 2px; border-radius: 10px; font-size: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); color: var(--muted); }
+.qchips button.on { background: linear-gradient(135deg, var(--a1), var(--a2)); color: #fff; border-color: transparent; font-weight: 600; }

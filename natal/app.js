@@ -3,7 +3,7 @@
    Pure vanilla JS, offline-first, all data stays on the phone.
    ========================================================= */
 'use strict';
-const APP_VERSION = '1.6', APP_BUILT = '2026-10-13 01:58'; // filled in by build.sh
+const APP_VERSION = '1.7', APP_BUILT = '2026-10-15 01:02'; // filled in by build.sh
 
 // ---------- tiny helpers ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -111,10 +111,12 @@ const bmi = w => r1(w / (P().heightCm / 100) ** 2);
 const slotTarget = slot => target() * SLOTS.find(s => s.id === slot).share;
 
 const mealById = id => MEALS.find(m => m.id === id);
-function mealCalc(meal, portion = 1, addons = []) {
+// adj = what she actually ate: q[i] = amount of ingredient i (0 none … 2 double), extras = things she added
+function mealCalc(meal, portion = 1, addons = [], adj = {}) {
   let kcal = 0, p = 0;
-  meal.items.forEach(i => { kcal += i[2] * portion; p += i[3] * portion; });
+  meal.items.forEach((i, ix) => { const q = adj.q?.[ix] ?? 1; kcal += i[2] * portion * q; p += i[3] * portion * q; });
   addons.forEach(ix => { const a = meal.addons[ix]; if (a) { kcal += a[1]; p += a[2]; } });
+  (adj.extras || []).forEach(x => { kcal += x.kcal * x.qty; p += (x.p || 0) * x.qty; });
   return { kcal: r5(kcal), p: Math.round(p) };
 }
 const baseKcal = m => m.items.reduce((s, i) => s + i[2], 0);
@@ -661,10 +663,23 @@ function closeSheet() {
 }
 
 // ----- meal detail / customize -----
-let mealCtx = null; // {k, slot, id, portion, addons, mode:'plan'|'browse'}
-function openMealSheet(ctx) {
+let mealCtx = null; // {k, slot, id, portion, addons, q, extras, mode:'plan'|'browse'}
+const Q_OPTS = [[0, 'בלי'], [0.5, 'חצי'], [1, 'רגיל'], [1.5, 'פי 1.5'], [2, 'כפול']];
+const ctxAdj = () => ({ q: mealCtx.q, extras: mealCtx.extras });
+function changeList(m, addons, adj) {
+  const out = [];
+  m.items.forEach((it, ix) => { const q = adj.q?.[ix] ?? 1; if (q !== 1) out.push(`${{ 0: 'בלי', 0.5: 'חצי', 1.5: 'יותר', 2: 'כפול' }[q] || '×' + q} ${it[0]}`); });
+  addons.forEach(i => m.addons[i] && out.push('+ ' + m.addons[i][0]));
+  (adj.extras || []).forEach(x => out.push(`+ ${x.name}${x.qty !== 1 ? ' ×' + x.qty : ''}`));
+  return out;
+}
+function openMealSheet(ctx, focus) {
+  const m0 = mealById(ctx.id);
+  ctx.q = ctx.q && ctx.q.length === m0.items.length ? [...ctx.q] : m0.items.map(() => 1);
+  ctx.extras = (ctx.extras || []).map(x => ({ ...x }));
+  ctx.xq = '';
   mealCtx = ctx;
-  const m = mealById(ctx.id), c = mealCalc(m, ctx.portion, ctx.addons);
+  const m = m0, c = mealCalc(m, ctx.portion, ctx.addons, ctxAdj());
   const eaten = ctx.mode === 'plan' && planEntry(ctx.k, ctx.slot);
   const fav = S.favorites.includes(m.id);
   const slot = SLOTS.find(s => s.id === ctx.slot);
@@ -677,14 +692,20 @@ function openMealSheet(ctx) {
     </div>
     <div class="card" style="text-align:center;padding:14px">
       <div class="row between"><button class="icon-btn" data-action="fav" data-id="${m.id}">${fav ? '❤️' : '🤍'}</button>
-        <div><div class="big-num grad-text" id="mKcal">${c.kcal}</div><div class="tiny muted">kcal · <span id="mProt">${c.p}</span>g protein</div></div>
+        <div><div class="big-num grad-text" id="mKcal">${c.kcal}</div><div class="tiny muted">kcal · <span id="mProt">${c.p}</span>g protein</div><div class="tiny he" id="mChanges" style="color:var(--a1);margin-top:4px">${esc(changeList(m, ctx.addons, ctxAdj()).join(' · '))}</div></div>
         <button class="icon-btn" data-action="meal-swap-in-sheet">🔄</button></div>
       <div style="margin-top:14px"><div class="row between small"><span class="muted">Portion</span><b id="mPortion">×${ctx.portion}</b></div>
         <input type="range" min="0.5" max="2" step="0.25" value="${ctx.portion}" data-input="portion" style="margin-top:8px"></div>
     </div>
-    <div class="card he"><h3 style="flex-direction:row-reverse">מה בצלחת</h3><div id="mItems">${itemsHtml(m, ctx.portion)}</div></div>
+    <div class="card he" id="mItemsCard"><h3 style="flex-direction:row-reverse">מה בצלחת <span class="tiny faint" style="text-transform:none">הורדת או הוספת משהו? שני כאן 👇</span></h3><div id="mItems">${itemsHtml(m, ctx.portion)}</div></div>
     ${m.addons.length ? `<div class="he"><div class="small muted" style="margin:0 4px 8px">תוספות (לפי החשק)</div>
       ${m.addons.map((a, i) => `<button class="addon ${ctx.addons.includes(i) ? 'on' : ''}" data-action="addon" data-i="${i}"><span>${esc(a[0])}</span><span class="row"><span class="small muted" dir="ltr">+${a[1]}</span><span class="plus">${ctx.addons.includes(i) ? '✓' : '+'}</span></span></button>`).join('')}</div>` : ''}
+    <div class="card he" style="margin-top:6px"><h3 style="flex-direction:row-reverse">הוספת עוד משהו?</h3>
+      <div id="mExtras">${extrasHtml()}</div>
+      <input class="input" style="text-align:right;margin-top:8px" data-input="extra-search" placeholder="🔎 חפשי: טחינה, לחם, גבינה..." value="">
+      <div id="extraHits"></div>
+      <div class="row" style="gap:8px;margin-top:8px"><input class="input" id="exName" placeholder="משהו אחר (שם)"><input class="input" id="exKcal" type="number" inputmode="numeric" placeholder="קלוריות" style="max-width:110px"><button class="btn sm" data-action="extra-custom">＋</button></div>
+    </div>
     <div class="card he" style="margin-top:6px"><h3 style="flex-direction:row-reverse">איך מכינים</h3><div style="line-height:1.6">${esc(m.how)}</div></div>
     ${ctx.mode === 'plan' ? `
       <button class="btn primary block" data-action="meal-eat">${eaten ? '💾 Update' : '✓ I ate this'}</button>
@@ -699,20 +720,40 @@ function openMealSheet(ctx) {
   `);
 }
 function itemsHtml(m, portion) {
-  return m.items.map(i => `<div class="ing"><span>${esc(i[0])} <span class="faint small">${esc(i[1])}${portion !== 1 ? ` <bdi dir="ltr">×${portion}</bdi>` : ''}</span></span><span class="muted small" dir="ltr">${r5(i[2] * portion)}</span></div>`).join('');
+  return m.items.map((i, ix) => { const q = mealCtx?.q?.[ix] ?? 1; return `<div class="ing2 ${q === 0 ? 'gone' : ''}">
+    <div class="ing"><span><span class="iname">${esc(i[0])}</span> <span class="faint small">${esc(i[1])}${portion !== 1 ? ` <bdi dir="ltr">×${portion}</bdi>` : ''}</span></span><span class="muted small" dir="ltr">${r5(i[2] * portion * q)}</span></div>
+    <div class="qchips">${Q_OPTS.map(([v, l]) => `<button class="${q === v ? 'on' : ''}" data-action="q-set" data-i="${ix}" data-v="${v}">${l}</button>`).join('')}</div></div>`; }).join('');
+}
+function extrasHtml() {
+  return mealCtx.extras.map((x, i) => `<div class="entry"><span class="e">${x.emoji || '➕'}</span><div class="grow"><div class="small">${esc(x.name)}</div><div class="tiny faint">${esc(x.unit || '')}</div></div>
+    <button class="swap" data-action="extra-qty" data-i="${i}" data-v="-0.5">−</button><b class="small" style="min-width:30px;text-align:center" dir="ltr">×${x.qty}</b><button class="swap" data-action="extra-qty" data-i="${i}" data-v="0.5">+</button>
+    <span class="small muted" style="min-width:36px;text-align:left" dir="ltr">+${Math.round(x.kcal * x.qty)}</span><button class="x" data-action="extra-del" data-i="${i}">×</button></div>`).join('');
 }
 function refreshMealSheet() {
-  const m = mealById(mealCtx.id), c = mealCalc(m, mealCtx.portion, mealCtx.addons);
+  const m = mealById(mealCtx.id), c = mealCalc(m, mealCtx.portion, mealCtx.addons, ctxAdj());
   $('#mKcal').textContent = c.kcal; $('#mProt').textContent = c.p; $('#mPortion').textContent = '×' + mealCtx.portion;
+  $('#mChanges').textContent = changeList(m, mealCtx.addons, ctxAdj()).join(' · ');
   $('#mItems').innerHTML = itemsHtml(m, mealCtx.portion);
+  $('#mExtras').innerHTML = extrasHtml();
 }
-function logMealEntry(k, slot, m, portion, addons, planSlot) {
-  const c = mealCalc(m, portion, addons), d = getDay(k);
-  const name = m.name + (addons.length ? ' + ' + addons.map(i => m.addons[i][0]).join(', ') : '');
+function logMealEntry(k, slot, m, portion, addons, planSlot, adj = {}) {
+  const c = mealCalc(m, portion, addons, adj), d = getDay(k);
+  const ch = changeList(m, addons, adj);
+  const name = m.name + (ch.length ? ` (${ch.join(', ')})` : '');
   const existing = planSlot && d.entries.find(e => e.planSlot === planSlot);
-  const entry = { id: existing?.id || uid(), name, emoji: m.emoji, kcal: c.kcal, p: c.p, slot, mealId: m.id, qty: portion, planSlot: planSlot || null, t: Date.now() };
+  const entry = { id: existing?.id || uid(), name, emoji: m.emoji, kcal: c.kcal, p: c.p, slot, mealId: m.id, qty: portion, planSlot: planSlot || null, t: Date.now(), adj: { q: adj.q || null, extras: adj.extras || [] } };
   if (existing) Object.assign(existing, entry); else d.entries.push(entry);
   save();
+}
+
+function openAteAsk(k, slot) {
+  const pl = ensurePlan(k)[slot], m = mealById(pl.id), c = mealCalc(m, pl.portion, pl.addons, { q: pl.q, extras: pl.extras });
+  openSheet(`<div class="sheet-hero"><div class="big-emoji">${m.emoji}</div><h2 class="he">${esc(m.name)}</h2><div class="small muted">${c.kcal} kcal as planned</div></div>
+    <div class="center" style="font-weight:600;margin-bottom:2px">Did you eat it exactly as planned?</div>
+    <div class="center small muted he" style="margin-bottom:16px">אכלת בדיוק כמו בתוכנית?</div>
+    <button class="btn primary block" data-action="eat-as-is" data-slot="${slot}">✓ Yes, exactly · כן, בדיוק</button>
+    <button class="btn block" style="margin-top:10px" data-action="eat-changed" data-slot="${slot}">✏️ I removed / added something · שיניתי משהו</button>
+    <button class="btn block" style="margin-top:10px" data-action="ate-else" data-slot="${slot}">🔄 Ate something else · אכלתי משהו אחר</button>`);
 }
 
 // ----- meal picker (swap) -----
@@ -1451,6 +1492,11 @@ document.addEventListener('input', e => {
   const el = e.target, kind = el.dataset.input;
   if (kind === 'meal-search') { ui.mf.q = el.value.trim(); $('#mealList').innerHTML = mealListHtml(); }
   if (kind === 'portion') { mealCtx.portion = Number(el.value); refreshMealSheet(); }
+  if (kind === 'extra-search') {
+    const q = el.value.trim(), hits = q ? allFoods().map((f, i) => [f, i]).filter(([f]) => f[0].includes(q)).slice(0, 6) : [];
+    $('#extraHits').innerHTML = hits.map(([f, i]) => `<button class="food-row" data-action="extra-add" data-i="${i}"><span class="e">${f[4]}</span><span class="grow" style="text-align:right">${esc(f[0])} <span class="tiny faint">${esc(f[1])}</span></span><span class="small muted" dir="ltr">+${f[2]}</span></button>`).join('')
+      || (q ? '<div class="small faint center" style="padding:8px">לא מצאתי, אפשר להוסיף ידנית למטה 👇</div>' : '');
+  }
   if (kind === 'qf') { qa.f[el.dataset.f] = el.value; refreshManual(); }
   if (kind === 'dish-search') { qa.dish.q = el.value.trim(); const hits = qa.dish.q ? allFoods().map((f, i) => [f, i]).filter(([f]) => f[0].includes(qa.dish.q)).slice(0, 6) : [];
     $('#dishHits').innerHTML = hits.map(([f, i]) => `<button class="food-row" data-action="dish-add" data-i="${i}"><span class="e">${f[4]}</span><span class="grow he" style="text-align:right">${esc(f[0])} <span class="tiny faint">${esc(f[1])}</span></span><span class="small muted">+${f[2]}</span></button>`).join('') || '<div class="small faint center" style="padding:8px">Not in the list → use 🏷️ From a label</div>'; }
@@ -1476,15 +1522,26 @@ function handle(a, el) {
     case 'install': deferredInstall?.prompt(); break;
 
     // --- home ---
-    case 'open-meal': { const pl = ensurePlan(k)[ds.slot]; openMealSheet({ k, slot: ds.slot, id: pl.id, portion: pl.portion, addons: [...pl.addons], mode: 'plan' }); break; }
+    case 'open-meal': { const pl = ensurePlan(k)[ds.slot]; openMealSheet({ k, slot: ds.slot, id: pl.id, portion: pl.portion, addons: [...pl.addons], q: pl.q, extras: pl.extras, mode: 'plan' }); break; }
     case 'toggle-eaten': {
       const ex = planEntry(k, ds.slot);
       if (ex) { getDay(k).entries = getDay(k).entries.filter(e => e !== ex); save(); buzz(8); }
-      else { const pl = ensurePlan(k)[ds.slot]; logMealEntry(k, ds.slot, mealById(pl.id), pl.portion, pl.addons, ds.slot); buzz([10, 30, 10]);
-        const msgs = ['Yum! ✨', 'Logged! 💪', 'Nice one 💛', 'כל הכבוד! ✨', 'יאמי! 😋', 'מעולה! 🔥'];
-        toast(msgs[(Math.random() * msgs.length) | 0]);
-        if (SLOTS.every(s => planEntry(k, s.id))) setTimeout(() => confetti(), 200); }
+      else { openAteAsk(k, ds.slot); break; }
       checkBadges(); render(); break;
+    }
+    case 'eat-as-is': {
+      const pl = ensurePlan(k)[ds.slot]; closeSheet();
+      logMealEntry(k, ds.slot, mealById(pl.id), pl.portion, pl.addons, ds.slot, { q: pl.q, extras: pl.extras }); buzz([10, 30, 10]);
+      const msgs = ['Yum! ✨', 'Logged! 💪', 'Nice one 💛', 'כל הכבוד! ✨', 'יאמי! 😋', 'מעולה! 🔥'];
+      toast(msgs[(Math.random() * msgs.length) | 0]);
+      if (SLOTS.every(s => planEntry(k, s.id))) setTimeout(() => confetti(), 200);
+      checkBadges(); render(); break;
+    }
+    case 'eat-changed': {
+      const pl = ensurePlan(k)[ds.slot]; closeSheet();
+      setTimeout(() => { openMealSheet({ k, slot: ds.slot, id: pl.id, portion: pl.portion, addons: [...pl.addons], q: pl.q, extras: pl.extras, mode: 'plan' });
+        setTimeout(() => $('#mItemsCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 450); }, 360);
+      break;
     }
     case 'swap': openPicker(k, ds.slot); break;
     case 'reroll-day': {
@@ -1511,12 +1568,22 @@ function handle(a, el) {
     // --- meal sheet ---
     case 'addon': { const i = Number(ds.i); mealCtx.addons = mealCtx.addons.includes(i) ? mealCtx.addons.filter(x => x !== i) : [...mealCtx.addons, i]; el.classList.toggle('on'); el.querySelector('.plus').textContent = mealCtx.addons.includes(i) ? '✓' : '+'; refreshMealSheet(); buzz(5); break; }
     case 'fav': { const id = ds.id; S.favorites = S.favorites.includes(id) ? S.favorites.filter(x => x !== id) : [...S.favorites, id]; save(); el.textContent = S.favorites.includes(id) ? '❤️' : '🤍'; buzz(10); if (S.favorites.includes(id)) toast('❤️ Saved — it’ll show up more often'); break; }
-    case 'meal-save': { const p = ensurePlan(mealCtx.k); p[mealCtx.slot] = { id: mealCtx.id, portion: mealCtx.portion, addons: mealCtx.addons }; save(); closeSheet(); render(); toast('Saved ✨'); break; }
+    case 'meal-save': { const p = ensurePlan(mealCtx.k); p[mealCtx.slot] = { id: mealCtx.id, portion: mealCtx.portion, addons: mealCtx.addons, q: mealCtx.q, extras: mealCtx.extras }; save(); closeSheet(); render(); toast('Saved ✨'); break; }
     case 'meal-eat': {
-      const p = ensurePlan(mealCtx.k); p[mealCtx.slot] = { id: mealCtx.id, portion: mealCtx.portion, addons: mealCtx.addons };
-      logMealEntry(mealCtx.k, mealCtx.slot, mealById(mealCtx.id), mealCtx.portion, mealCtx.addons, mealCtx.slot);
+      const p = ensurePlan(mealCtx.k); p[mealCtx.slot] = { id: mealCtx.id, portion: mealCtx.portion, addons: mealCtx.addons, q: mealCtx.q, extras: mealCtx.extras };
+      logMealEntry(mealCtx.k, mealCtx.slot, mealById(mealCtx.id), mealCtx.portion, mealCtx.addons, mealCtx.slot, ctxAdj());
       closeSheet(); buzz([10, 30, 10]); toast('Logged! 💛'); checkBadges(); render();
       if (SLOTS.every(s => planEntry(k, s.id))) setTimeout(() => confetti(), 300); break;
+    }
+    case 'q-set': mealCtx.q[Number(ds.i)] = Number(ds.v); buzz(5); refreshMealSheet(); break;
+    case 'extra-add': { const f = allFoods()[Number(ds.i)]; mealCtx.extras.push({ name: f[0], unit: f[1], kcal: f[2], p: f[3], emoji: f[4], qty: 1 }); mealCtx.xq = '';
+      const si = $('[data-input="extra-search"]'); if (si) si.value = ''; $('#extraHits').innerHTML = ''; buzz(8); refreshMealSheet(); break; }
+    case 'extra-qty': { const x = mealCtx.extras[Number(ds.i)]; x.qty = Math.max(0.5, x.qty + Number(ds.v)); refreshMealSheet(); break; }
+    case 'extra-del': mealCtx.extras.splice(Number(ds.i), 1); refreshMealSheet(); break;
+    case 'extra-custom': {
+      const n = $('#exName').value.trim(), kc = Math.round(num($('#exKcal').value));
+      if (!n || !kc) { toast('Add a name and calories 🙂'); break; }
+      mealCtx.extras.push({ name: n, unit: '', kcal: kc, p: 0, emoji: '✏️', qty: 1 }); $('#exName').value = ''; $('#exKcal').value = ''; refreshMealSheet(); break;
     }
     case 'meal-uneat': { const d = getDay(mealCtx.k); d.entries = d.entries.filter(e => e.planSlot !== mealCtx.slot); save(); closeSheet(); render(); break; }
     case 'meal-swap-in-sheet': if (mealCtx.mode === 'plan') openPicker(mealCtx.k, mealCtx.slot); break;
@@ -1525,8 +1592,8 @@ function handle(a, el) {
       setTimeout(() => { openQuickAdd(k, slot); qa.planSlot = slot; }, 360); break;
     }
     case 'view-meal': { const m = mealById(ds.id); openMealSheet({ k, slot: null, id: m.id, portion: 1, addons: [], mode: 'browse' }); $('#sheet').dataset.kind = 'meal'; break; }
-    case 'plan-as': { setPlanMeal(k, ds.slot, mealCtx.id); const pl = ensurePlan(k)[ds.slot]; pl.portion = mealCtx.portion; pl.addons = mealCtx.addons; save(); closeSheet(); toast(`On today’s menu ✨`); ui.tab = 'home'; render(); break; }
-    case 'browse-log': { const m = mealById(mealCtx.id), c = mealCalc(m, mealCtx.portion, mealCtx.addons); addEntry(k, { name: m.name, emoji: m.emoji, kcal: c.kcal, p: c.p, slot: slotByTime(), mealId: m.id, qty: mealCtx.portion }); closeSheet(); render(); break; }
+    case 'plan-as': { setPlanMeal(k, ds.slot, mealCtx.id); const pl = ensurePlan(k)[ds.slot]; pl.portion = mealCtx.portion; pl.addons = mealCtx.addons; pl.q = mealCtx.q; pl.extras = mealCtx.extras; save(); closeSheet(); toast(`On today’s menu ✨`); ui.tab = 'home'; render(); break; }
+    case 'browse-log': { const m = mealById(mealCtx.id), c = mealCalc(m, mealCtx.portion, mealCtx.addons, ctxAdj()), ch = changeList(m, mealCtx.addons, ctxAdj()); addEntry(k, { name: m.name + (ch.length ? ` (${ch.join(', ')})` : ''), emoji: m.emoji, kcal: c.kcal, p: c.p, slot: slotByTime(), mealId: m.id, qty: mealCtx.portion }); closeSheet(); render(); break; }
 
     // --- picker ---
     case 'pick': setPlanMeal(ds.k, ds.slot, ds.id); buzz(10); closeSheet(); render(); toast('Swapped 🔄'); break;
