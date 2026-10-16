@@ -4,6 +4,7 @@ const CONFIG = {
   appName: 'Glow Celine',
   name: 'Celine',
   nameHe: 'סלין',
+  walksNoFood: true,  // walks/steps count as fat loss, not extra food (she can change it in Settings)
   theme: 'rose',
   colors: ['#ff5fa2', '#a66bff'],
 };

@@ -3,7 +3,7 @@
    Pure vanilla JS, offline-first, all data stays on the phone.
    ========================================================= */
 'use strict';
-const APP_VERSION = '1.7', APP_BUILT = '2026-10-15 01:02'; // filled in by build.sh
+const APP_VERSION = '1.8', APP_BUILT = '2026-10-16 14:42'; // filled in by build.sh
 
 // ---------- tiny helpers ----------
 const $ = (s, r = document) => r.querySelector(s);
@@ -86,7 +86,7 @@ function observedTdee() {
   const span = daysBetween(ws[0].date, ws[ws.length - 1].date);
   if (span < 21) return null;
   const days = [];
-  for (let k = ws[0].date; k <= ws[ws.length - 1].date; k = keyOf(addDays(parseKey(k), 1))) { const t = dayTotals(k); if (t.n >= 3) days.push(t.kcal - t.burn); }
+  for (let k = ws[0].date; k <= ws[ws.length - 1].date; k = keyOf(addDays(parseKey(k), 1))) { const t = dayTotals(k); if (t.n >= 3) days.push(t.kcal - t.burnAll); }
   if (days.length < span * 0.7) return null; // only trust well-logged periods
   const xs = ws.map(w => daysBetween(ws[0].date, w.date)), ys = ws.map(w => w.kg);
   const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
@@ -155,11 +155,12 @@ function generatePlan(k, keep = {}) {
 }
 const dayTotals = k => {
   const d = S.days[k];
-  if (!d) return { kcal: 0, p: 0, burn: 0, n: 0 };
+  if (!d) return { kcal: 0, p: 0, burn: 0, burnAll: 0, n: 0 };
   return {
     kcal: d.entries.reduce((s, e) => s + e.kcal, 0),
     p: d.entries.reduce((s, e) => s + (e.p || 0), 0),
-    burn: dayBurn(d),
+    burn: dayBudgetBurn(d),  // what gets added to her food budget
+    burnAll: dayBurn(d),     // everything she burned (for progress math)
     n: d.entries.length,
   };
 };
@@ -207,7 +208,7 @@ function projection() {
     const logged = [];
     for (let i = 1; i <= 14; i++) { const k = keyOf(addDays(new Date(), -i)); const t = dayTotals(k); if (t.n >= 2) logged.push(t); }
     if (logged.length >= 3) {
-      const avg = logged.reduce((s, t) => s + t.kcal - t.burn, 0) / logged.length;
+      const avg = logged.reduce((s, t) => s + t.kcal - t.burnAll, 0) / logged.length;
       const def = tdee() - avg;
       if (def > 60) { rate = (def * 7) / 7700; source = 'log'; }
     }
@@ -400,7 +401,7 @@ const VIEWS = {
           </div>
           <div class="ring-stats">
             <div class="stat"><div class="k">🍽️ Eaten</div><div class="v">${t.kcal}</div></div>
-            <div class="stat"><div class="k">🔥 Burned</div><div class="v">${t.burn}</div></div>
+            <div class="stat"><div class="k">🔥 Burned</div><div class="v">${t.burnAll}</div>${t.burnAll > t.burn ? `<div class="tiny faint">+${t.burn} to food</div>` : ''}</div>
             <div class="stat"><div class="k">🎯 Goal</div><div class="v">${tgt}</div></div>
           </div>
         </div>
@@ -446,7 +447,8 @@ const VIEWS = {
       <div class="card">
         <h3>🏃‍♀️ Movement <span class="row" style="gap:6px"><button class="chip" data-action="watch-import">⌚ Watch</button><button class="chip" data-action="add-exercise">＋ Add</button></span></h3>
         ${d.watch ? `<div class="entry"><span class="e">⌚</span><div class="grow"><div>Watch · Apple Health</div><div class="tiny muted">${d.watch.kcal} active kcal · synced ${new Date(d.watch.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div></div><span class="small" style="color:var(--good)">+${d.watch.credited}</span><button class="x" data-action="del-watch" data-k="${k}">×</button></div>
-          ${d.exercise.length ? `<div class="tiny faint" style="padding:6px 0">Watch and logged workouts overlap, so the bigger one counts: <b>+${dayBurn(d)}</b></div>` : ''}` : ''}
+          ${d.exercise.length && !walksNoFood() ? `<div class="tiny faint" style="padding:6px 0">Watch and logged workouts overlap, so the bigger one counts: <b>+${dayBurn(d)}</b></div>` : ''}` : ''}
+        ${walksNoFood() ? `<div class="tiny faint" style="padding:6px 0">🚶‍♀️ Walks & steps don’t add food, so they all go to fat loss. Weights, pilates & other workouts still add food.</div>` : ''}
         ${d.exercise.length ? d.exercise.map(x => `<div class="entry"><span class="e">${x.emoji}</span><div class="grow"><div class="he" style="text-align:left">${esc(x.name)}</div><div class="tiny muted">${x.min} min${x.parts ? ' · ' + x.parts.map(p => esc(p.label)).join(' · ') : ''}</div></div><span class="small" style="color:var(--good)">+${x.kcal}</span><button class="x" data-action="del-ex" data-id="${x.id}">×</button></div>`).join('')
           : d.watch ? '' : `<button class="tip-card small" style="width:100%;text-align:left" data-action="add-exercise">Worked out? Tell me what you did (cardio, weights, pilates…) and I’ll calculate the calories. They get added to your food budget 🍽️</button>`}
       </div>
@@ -1101,6 +1103,17 @@ const watchBaseline = () => Math.round(bmr(currentWeight()) * 0.1);
 const watchCredit = kcal => Math.max(0, Math.round(kcal * 0.8 - watchBaseline()));
 // watch data already contains any workout she wore it for → use whichever is bigger, never both
 const dayBurn = d => Math.max(manualBurn(d), d.watch ? d.watch.credited : 0);
+// "Walks don't add food": walks/steps still count as burned (faster fat loss) but don't raise the food budget.
+const walksNoFood = () => S.settings.walksNoFood ?? CONFIG.walksNoFood ?? false;
+const isWalkPart = p => p.kind === 'walk' || /^Walking/.test(p.label || '');
+function exBudget(x) {
+  const parts = x.parts || [], sum = parts.reduce((a, p) => a + p.kcal, 0);
+  if (!sum) return /הליכה|walk/i.test(x.name) ? 0 : x.kcal;
+  const walk = parts.filter(isWalkPart).reduce((a, p) => a + p.kcal, 0);
+  return Math.round(x.kcal * (1 - walk / sum));
+}
+// with the setting on, watch data (mostly everyday steps) is tracked only; logged non-walk workouts still add food
+const dayBudgetBurn = d => (walksNoFood() ? (d.exercise || []).reduce((a, x) => a + exBudget(x), 0) : dayBurn(d));
 const dayName = k => (k === todayKey() ? 'today' : k === keyOf(addDays(new Date(), -1)) ? 'yesterday' : fmtEN(parseKey(k), { weekday: 'long', month: 'short', day: 'numeric' }));
 
 function parseWatchText(txt) {
@@ -1158,7 +1171,7 @@ function applyWatch(k, kcal, dateOk = true) {
   save(); checkBadges(); render(); buzz([10, 30, 10]);
   const added = dayBurn(d), man = manualBurn(d);
   openSheet(`<div class="sheet-hero"><div class="big-emoji">⌚</div><h2>Synced ${dayName(k)} ✓</h2>
-      <div class="big-num grad-text" style="margin-top:8px">+${added}</div><div class="small muted">kcal added to ${dayName(k)}’s food budget</div></div>
+      ${walksNoFood() ? `<div class="big-num grad-text" style="margin-top:8px">${dayBurn(d)}</div><div class="small muted">kcal burned ${dayName(k)}, all of it goes to fat loss 🔥<br>(walks & steps don’t add food. Log weights/pilates with ＋ Add to get food for them)</div></div>` : `<div class="big-num grad-text" style="margin-top:8px">+${added}</div><div class="small muted">kcal added to ${dayName(k)}’s food budget</div></div>`}
     <div class="card small" style="line-height:1.6">
       <div class="row between"><span>Watch active energy</span><b>${kcal} kcal</b></div>
       <div class="row between"><span>Counted (80%, minus ${watchBaseline()} for everyday moving)</span><b>${d.watch.credited}</b></div>
@@ -1299,6 +1312,8 @@ function openSettings() {
     <div class="tiny faint" style="margin:-6px 0 14px">Healthy minimum for your height: ${minHealthyWeight()} kg (BMI 18.5)</div>
     <div class="field"><label>How active are you?</label><div class="seg">${acts.map(a => `<button class="${p.activity === a[0] ? 'on' : ''}" data-action="set-act" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
     <div class="field"><label>My goal</label><div class="seg">${[['lose', '🔥 Lose weight'], ['recomp', '💪 Lose fat & build muscle']].map(a => `<button class="${p.goalType === a[0] ? 'on' : ''}" data-action="set-goal" data-v="${a[0]}">${a[1]}</button>`).join('')}</div></div>
+    <div class="field"><label>Do walks & steps add food?</label><div class="seg">${[[false, '🍽️ Yes, add food'], [true, '🔥 No, keep for fat loss']].map(a => `<button class="${walksNoFood() === a[0] ? 'on' : ''}" data-action="set-walks" data-v="${a[0]}">${a[1]}</button>`).join('')}</div>
+      <div class="tiny faint" style="margin-top:6px">“No” = walking speeds up fat loss instead of adding food. Weights & pilates still add food (muscle needs it).</div></div>
     <div class="field" ${isRecomp() ? 'style="display:none"' : ''}><label>Pace</label><div class="seg">${[['gentle', '🐢 Gentle'], ['steady', '🚶‍♀️ Steady'], ['faster', '🏃‍♀️ Faster']].map(a => `<button class="${p.pace === a[0] ? 'on' : ''}" data-action="set-pace" data-v="${a[0]}">${a[1]}</button>`).join('')}</div>
     </div><div class="tiny faint" style="margin:-6px 0 14px">Resting burn ${Math.round(bmr(currentWeight()))} × activity ${P().activity} = ${formulaTdee()} kcal/day${isCalibrated() ? ` → tuned to your real results: ${tdee()}` : ''} − ${deficit()} → daily goal: <b>${target()} kcal</b> + workouts · protein <b>${proteinTarget()} g</b> · never below ${FLOOR()} kcal so you’re never starving.</div>
     <div class="field"><label>Water goal (cups)</label><input class="input" id="sWater" type="number" min="4" max="14" value="${s.waterGoal}"></div>
@@ -1667,8 +1682,8 @@ function handle(a, el) {
     case 'wz-back': wz.step = Math.max(0, wz.step - 1); renderWorkout(); break;
     case 'wz-save': {
       const r = workoutResult(), T = wz.types.map(t => WORKOUT_TYPES.find(x => x.id === t));
-      getDay(k).exercise.push({ id: uid(), name: T.map(t => t.en).join(' + '), emoji: T[0].emoji, min: r.mins, kcal: r.final, types: [...wz.types], parts: r.parts.map(p => ({ label: p.label, min: p.min, kcal: p.kcal })) });
-      S.lastWorkout = wz.d; save(); closeSheet(); checkBadges(); render(); confetti(70); toast(`🔥 ${r.final} kcal, nice work! Extra food budget unlocked`); break;
+      getDay(k).exercise.push({ id: uid(), name: T.map(t => t.en).join(' + '), emoji: T[0].emoji, min: r.mins, kcal: r.final, types: [...wz.types], parts: r.parts.map(p => ({ t: p.t, kind: wz.d[p.t].kind, label: p.label, min: p.min, kcal: p.kcal })) });
+      S.lastWorkout = wz.d; save(); closeSheet(); checkBadges(); render(); confetti(70); toast(walksNoFood() && wz.types.length === 1 && wz.types[0] === 'cardio' && wz.d.cardio.kind === 'walk' ? `🚶‍♀️ ${r.final} kcal burned, all of it counts as fat loss 🔥` : `🔥 ${r.final} kcal, nice work! Extra food budget unlocked`); break;
     }
 
     // --- coach ---
@@ -1679,6 +1694,7 @@ function handle(a, el) {
     case 'set-act': P().activity = Number(ds.v); save(); openSettings(); break;
     case 'set-pace': P().pace = ds.v; save(); openSettings(); break;
     case 'set-goal': P().goalType = ds.v; save(); openSettings(); break;
+    case 'set-walks': S.settings.walksNoFood = ds.v === 'true'; save(); render(); openSettings(); break;
     case 'settings-save': {
       const p = P(), num = id => Number($(id).value);
       p.name = $('#sName').value.trim() || p.name; p.nameHe = $('#sNameHe').value.trim() || p.nameHe;
